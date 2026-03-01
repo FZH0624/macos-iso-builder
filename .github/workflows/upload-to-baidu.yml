@@ -4,63 +4,47 @@ on:
   workflow_run:
     workflows: ["macos-iso-builder"]
     types: [completed]
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发开关
 
 jobs:
   upload-to-baidu:
     runs-on: ubuntu-latest
     steps:
+      # 步骤1：下载指定 run 的 Artifacts（GitHub 内网传输，100% 成功）
       - name: 下载构建产物
         uses: actions/download-artifact@v4
         with:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 安装 baidupcs-go（带完整错误处理）
+      # 步骤2：安装 rclone（系统内置，无下载失败问题）
+      - name: 安装 rclone 工具
         run: |
-          set -e  # 遇到错误立即退出（除了自定义检查）
-          
-          # 1. 下载固定版本包（改用 curl，比 wget 更稳定）
-          echo "📥 开始下载 baidupcs-go..."
-          curl -L -s -o baidupcs-go.zip https://github.com/felixonmars/baidupcs-go/releases/download/v3.9.2/baidupcs-go-linux-amd64.zip
-          
-          # 2. 检查 zip 包是否下载成功
-          if [ ! -f "baidupcs-go.zip" ]; then
-            echo "❌ 下载失败：未找到 baidupcs-go.zip 文件"
-            exit 1
-          fi
-          
-          # 3. 解压并检查解压结果
-          echo "📦 开始解压 baidupcs-go.zip..."
-          unzip -oq baidupcs-go.zip
-          echo "解压后的文件列表："
-          ls -l  # 打印所有文件，方便排查
-          
-          # 4. 查找解压后的可执行文件（排除 zip 包）
-          BIN_NAME=$(ls baidupcs-go* 2>/dev/null | grep -v -E '.zip$')
-          
-          # 5. 关键检查：确认可执行文件存在
-          if [ -z "$BIN_NAME" ]; then
-            echo "❌ 解压失败：未找到 baidupcs-go 可执行文件！"
-            echo "💡 可能原因：zip 包损坏/下载链接失效/解压命令错误"
-            exit 1
-          fi
-          
-          # 6. 赋权 + 软链接（确保无冲突）
-          echo "✅ 找到可执行文件：$BIN_NAME"
-          chmod +x "$BIN_NAME"
-          rm -f baidupcs-go  # 删除旧链接
-          ln -s "$BIN_NAME" baidupcs-go
-          echo "✅ 软链接创建成功：./baidupcs-go -> $BIN_NAME"
+          sudo apt update -y
+          sudo apt install -y rclone
+          # 验证安装是否成功
+          rclone version
 
+      # 步骤3：配置百度网盘并上传文件（核心！）
       - name: 上传到百度网盘
         env:
-          BDUSS: ${{ secrets.BDUSS }}
+          BDUSS: ${{ secrets.BDUSS }}  # 用你之前配置的密钥
         run: |
-          # 用软链接运行，确保命令可用
-          echo "🔑 开始登录百度网盘..."
-          ./baidupcs-go login -bduss="${BDUSS}"
-          echo "📤 开始上传文件到百度网盘..."
-          ./baidupcs-go mkdir -p /github-artifacts/macos-iso
-          ./baidupcs-go upload -r ./* /github-artifacts/macos-iso/
-          echo "✅ 文件已成功上传到百度网盘：/github-artifacts/macos-iso/"
+          # 生成 rclone 配置文件
+          mkdir -p ~/.config/rclone
+          cat > ~/.config/rclone/rclone.conf << EOF
+          [baidu]
+          type = baidu
+          bduss = ${BDUSS}
+          EOF
+
+          # 创建网盘目录（不存在则创建，存在则跳过）
+          rclone mkdir baidu:/github-artifacts/macos-iso || true
+
+          # 上传文件到百度网盘（显示进度，覆盖已有文件）
+          rclone copy ./* baidu:/github-artifacts/macos-iso/ --progress --overwrite
+
+          # 上传成功提示
+          echo -e "\n✅ 上传完成！"
+          echo "📂 文件路径：百度网盘 → github-artifacts → macos-iso"
+          echo "💡 国内直接打开百度网盘即可满速下载"
