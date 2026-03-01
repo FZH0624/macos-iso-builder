@@ -16,7 +16,7 @@ jobs:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 安装 baidupcs-go（兼容任意文件名）
+      - name: 安装 baidupcs-go（修复软链接冲突）
         run: |
           # 下载固定版本包（避免latest链接失效）
           wget -q https://github.com/felixonmars/baidupcs-go/releases/download/v3.9.2/baidupcs-go-linux-amd64.zip -O baidupcs-go.zip
@@ -29,7 +29,9 @@ jobs:
           # 给所有baidupcs-go开头的文件赋执行权限（兼容任意文件名）
           chmod +x baidupcs-go*
           
-          # 软链接为固定名称，后续命令统一用这个名称（核心！）
+          # 关键修复：先删除已存在的软链接/文件，避免冲突
+          rm -f baidupcs-go
+          # 软链接为固定名称，后续命令统一用这个名称
           ln -s $(ls baidupcs-go* | grep -v .zip) baidupcs-go
 
       - name: 上传到百度网盘
