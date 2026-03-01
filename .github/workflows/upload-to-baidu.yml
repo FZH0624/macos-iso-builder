@@ -16,30 +16,51 @@ jobs:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 安装 baidupcs-go（修复软链接冲突）
+      - name: 安装 baidupcs-go（带完整错误处理）
         run: |
-          # 下载固定版本包（避免latest链接失效）
-          wget -q https://github.com/felixonmars/baidupcs-go/releases/download/v3.9.2/baidupcs-go-linux-amd64.zip -O baidupcs-go.zip
+          set -e  # 遇到错误立即退出（除了自定义检查）
           
-          # 解压并列出文件（排查文件名）
+          # 1. 下载固定版本包（改用 curl，比 wget 更稳定）
+          echo "📥 开始下载 baidupcs-go..."
+          curl -L -s -o baidupcs-go.zip https://github.com/felixonmars/baidupcs-go/releases/download/v3.9.2/baidupcs-go-linux-amd64.zip
+          
+          # 2. 检查 zip 包是否下载成功
+          if [ ! -f "baidupcs-go.zip" ]; then
+            echo "❌ 下载失败：未找到 baidupcs-go.zip 文件"
+            exit 1
+          fi
+          
+          # 3. 解压并检查解压结果
+          echo "📦 开始解压 baidupcs-go.zip..."
           unzip -oq baidupcs-go.zip
           echo "解压后的文件列表："
-          ls -l  # 打印文件列表，方便排查
+          ls -l  # 打印所有文件，方便排查
           
-          # 给所有baidupcs-go开头的文件赋执行权限（兼容任意文件名）
-          chmod +x baidupcs-go*
+          # 4. 查找解压后的可执行文件（排除 zip 包）
+          BIN_NAME=$(ls baidupcs-go* 2>/dev/null | grep -v -E '.zip$')
           
-          # 关键修复：先删除已存在的软链接/文件，避免冲突
-          rm -f baidupcs-go
-          # 软链接为固定名称，后续命令统一用这个名称
-          ln -s $(ls baidupcs-go* | grep -v .zip) baidupcs-go
+          # 5. 关键检查：确认可执行文件存在
+          if [ -z "$BIN_NAME" ]; then
+            echo "❌ 解压失败：未找到 baidupcs-go 可执行文件！"
+            echo "💡 可能原因：zip 包损坏/下载链接失效/解压命令错误"
+            exit 1
+          fi
+          
+          # 6. 赋权 + 软链接（确保无冲突）
+          echo "✅ 找到可执行文件：$BIN_NAME"
+          chmod +x "$BIN_NAME"
+          rm -f baidupcs-go  # 删除旧链接
+          ln -s "$BIN_NAME" baidupcs-go
+          echo "✅ 软链接创建成功：./baidupcs-go -> $BIN_NAME"
 
       - name: 上传到百度网盘
         env:
           BDUSS: ${{ secrets.BDUSS }}
         run: |
-          # 用软链接的固定名称运行，无需关心原文件名
+          # 用软链接运行，确保命令可用
+          echo "🔑 开始登录百度网盘..."
           ./baidupcs-go login -bduss="${BDUSS}"
+          echo "📤 开始上传文件到百度网盘..."
           ./baidupcs-go mkdir -p /github-artifacts/macos-iso
           ./baidupcs-go upload -r ./* /github-artifacts/macos-iso/
           echo "✅ 文件已成功上传到百度网盘：/github-artifacts/macos-iso/"
