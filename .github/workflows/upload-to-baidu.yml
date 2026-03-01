@@ -1,0 +1,29 @@
+name: 上传 Artifacts 到百度网盘
+
+on:
+  workflow_run:
+    workflows:
+      - "macos-iso-builder"  # 你原来构建的 workflow 名字
+    types: [completed]
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载本次构建的 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 22527133827
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 上传到百度网盘
+        uses: yzx911/baidupan-action@master
+        with:
+          # 百度网盘账号
+          bduss: ${{ secrets.BDUSS }}
+          sToken: ${{ secrets.STOKEN }}
+          # 本地要上传的目录（就是刚才下载的 artifact）
+          localPath: ./
+          # 网盘里的路径
+          remotePath: /github-artifacts/
+          overwrite: true
