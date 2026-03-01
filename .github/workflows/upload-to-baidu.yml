@@ -10,41 +10,49 @@ jobs:
   upload-to-baidu:
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：下载指定 run 的 Artifacts（GitHub 内网传输，100% 成功）
+      # 步骤1：下载指定 run 的 Artifacts
       - name: 下载构建产物
         uses: actions/download-artifact@v4
         with:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 步骤2：安装 rclone（系统内置，无下载失败问题）
-      - name: 安装 rclone 工具
+      # 步骤2：安装 rclone（确保是最新版）
+      - name: 安装/升级 rclone
         run: |
-          sudo apt update -y
-          sudo apt install -y rclone
-          # 验证安装是否成功
+          # 卸载旧版本，安装最新版（避免类型名兼容问题）
+          sudo apt remove -y rclone
+          curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb
+          sudo dpkg -i rclone-current-linux-amd64.deb
+          # 验证版本和支持的后端
           rclone version
+          rclone help backends | grep -i baidu
 
-      # 步骤3：配置百度网盘并上传文件（核心！）
+      # 步骤3：配置百度网盘并上传文件（核心修复）
       - name: 上传到百度网盘
         env:
-          BDUSS: ${{ secrets.BDUSS }}  # 用你之前配置的密钥
+          BDUSS: ${{ secrets.BDUSS }}
         run: |
-          # 生成 rclone 配置文件
+          # 生成新版 rclone 配置文件（type 改为 baidupcs）
           mkdir -p ~/.config/rclone
           cat > ~/.config/rclone/rclone.conf << EOF
           [baidu]
-          type = baidu
+          type = baidupcs
           bduss = ${BDUSS}
           EOF
 
-          # 创建网盘目录（不存在则创建，存在则跳过）
+          # 验证配置是否有效
+          echo "🔑 验证百度网盘登录..."
+          rclone lsd baidu:/ || echo "⚠️ 登录可能失败，请检查 BDUSS 是否有效"
+
+          # 创建网盘目录（不存在则创建）
           rclone mkdir baidu:/github-artifacts/macos-iso || true
 
-          # 上传文件到百度网盘（显示进度，覆盖已有文件）
-          rclone copy ./* baidu:/github-artifacts/macos-iso/ --progress --overwrite
+          # 上传文件（移除无效的 --overwrite，默认覆盖旧文件）
+          echo "📤 开始上传文件到百度网盘..."
+          rclone copy ./* baidu:/github-artifacts/macos-iso/ --progress
 
           # 上传成功提示
           echo -e "\n✅ 上传完成！"
           echo "📂 文件路径：百度网盘 → github-artifacts → macos-iso"
-          echo "💡 国内直接打开百度网盘即可满速下载"
+          echo "💡 国内打开百度网盘即可满速下载"
