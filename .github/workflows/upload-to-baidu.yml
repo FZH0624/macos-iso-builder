@@ -4,36 +4,31 @@ on:
   workflow_run:
     workflows: ["macos-iso-builder"]
     types: [completed]
-  workflow_dispatch:  # 手动触发开关
+  workflow_dispatch:
 
 jobs:
   upload-to-baidu:
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：下载指定 run 的 Artifacts
+      # 步骤1：下载 Artifacts（仅保留核心功能）
       - name: 下载构建产物
         uses: actions/download-artifact@v4
         with:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 步骤2：安装 rclone（确保是最新版）
-      - name: 安装/升级 rclone
+      # 步骤2：快速安装 rclone（跳过卸载，直接装最新版）
+      - name: 安装 rclone
         run: |
-          # 卸载旧版本，安装最新版（避免类型名兼容问题）
-          sudo apt remove -y rclone
-          curl -O https://downloads.rclone.org/rclone-current-linux-amd64.deb
-          sudo dpkg -i rclone-current-linux-amd64.deb
-          # 验证版本和支持的后端
-          rclone version
-          rclone help backends | grep -i baidu
+          curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.deb -o rclone.deb
+          sudo dpkg -i rclone.deb || sudo apt install -f -y  # 自动修复依赖
 
-      # 步骤3：配置百度网盘并上传文件（核心修复）
+      # 步骤3：配置+上传（打印完整报错，关键！）
       - name: 上传到百度网盘
         env:
           BDUSS: ${{ secrets.BDUSS }}
         run: |
-          # 生成新版 rclone 配置文件（type 改为 baidupcs）
+          # 生成最简配置文件
           mkdir -p ~/.config/rclone
           cat > ~/.config/rclone/rclone.conf << EOF
           [baidu]
@@ -41,18 +36,23 @@ jobs:
           bduss = ${BDUSS}
           EOF
 
-          # 验证配置是否有效
-          echo "🔑 验证百度网盘登录..."
-          rclone lsd baidu:/ || echo "⚠️ 登录可能失败，请检查 BDUSS 是否有效"
+          # 打印完整的网盘登录日志（关键：看具体哪里错）
+          echo "===== 开始验证百度网盘登录 ====="
+          rclone lsd baidu:/ 2>&1  # 把错误输出也打印出来
+          LOGIN_RESULT=$?  # 获取登录命令的返回值
 
-          # 创建网盘目录（不存在则创建）
-          rclone mkdir baidu:/github-artifacts/macos-iso || true
-
-          # 上传文件（移除无效的 --overwrite，默认覆盖旧文件）
-          echo "📤 开始上传文件到百度网盘..."
-          rclone copy ./* baidu:/github-artifacts/macos-iso/ --progress
-
-          # 上传成功提示
-          echo -e "\n✅ 上传完成！"
-          echo "📂 文件路径：百度网盘 → github-artifacts → macos-iso"
-          echo "💡 国内打开百度网盘即可满速下载"
+          # 只有登录成功才继续上传
+          if [ $LOGIN_RESULT -eq 0 ]; then
+            echo "===== 登录成功，开始上传 ====="
+            # 创建目录 + 上传文件（显示详细进度）
+            rclone mkdir baidu:/github-artifacts/macos-iso
+            rclone copy ./* baidu:/github-artifacts/macos-iso/ --progress -vv  # -vv 打印详细日志
+            echo "✅ 上传完成！文件在百度网盘 /github-artifacts/macos-iso/"
+          else
+            echo "❌ 百度网盘登录失败！"
+            echo "💡 请按以下步骤修复："
+            echo "1. 重新登录百度网盘网页版（https://pan.baidu.com）"
+            echo "2. F12 → Application → Cookies → pan.baidu.com → 复制最新的 BDUSS"
+            echo "3. 回到仓库 → Settings → Secrets → 更新 BDUSS 密钥"
+            exit 0  # 登录失败不终止 workflow，方便看日志
+          fi
