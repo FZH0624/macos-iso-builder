@@ -4,40 +4,40 @@ on:
   workflow_run:
     workflows: ["macos-iso-builder"]
     types: [completed]
-  workflow_dispatch:  # 手动触发开关
+  workflow_dispatch:
 
 jobs:
   upload-to-baidu:
     runs-on: ubuntu-latest
     steps:
-      # 步骤1：下载指定 run 的 Artifacts
       - name: 下载构建产物
         uses: actions/download-artifact@v4
         with:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 步骤2：安装百度网盘官方命令行工具（核心，无第三方依赖）
-      - name: 安装 baidupcs-go
+      - name: 安装 baidupcs-go（兼容任意文件名）
         run: |
-          # 下载官方工具包
-          wget -q https://github.com/felixonmars/baidupcs-go/releases/latest/download/baidupcs-go-linux-amd64.zip -O baidupcs-go.zip
-          # 解压
-          unzip -q baidupcs-go.zip
-          # 赋予执行权限
-          chmod +x baidupcs-go-linux-amd64
+          # 下载固定版本包（避免latest链接失效）
+          wget -q https://github.com/felixonmars/baidupcs-go/releases/download/v3.9.2/baidupcs-go-linux-amd64.zip -O baidupcs-go.zip
+          
+          # 解压并列出文件（排查文件名）
+          unzip -oq baidupcs-go.zip
+          echo "解压后的文件列表："
+          ls -l  # 打印文件列表，方便排查
+          
+          # 给所有baidupcs-go开头的文件赋执行权限（兼容任意文件名）
+          chmod +x baidupcs-go*
+          
+          # 软链接为固定名称，后续命令统一用这个名称（核心！）
+          ln -s $(ls baidupcs-go* | grep -v .zip) baidupcs-go
 
-      # 步骤3：登录百度网盘并上传文件
       - name: 上传到百度网盘
         env:
-          # 从密钥读取 BDUSS
           BDUSS: ${{ secrets.BDUSS }}
         run: |
-          # 登录网盘（仅需 BDUSS，无需 STOKEN）
-          ./baidupcs-go-linux-amd64 login -bduss="${BDUSS}"
-          # 创建网盘目录（不存在则自动创建）
-          ./baidupcs-go-linux-amd64 mkdir -p /github-artifacts/macos-iso
-          # 上传所有文件到网盘（递归上传目录）
-          ./baidupcs-go-linux-amd64 upload -r ./* /github-artifacts/macos-iso/
-          # 输出上传成功提示
+          # 用软链接的固定名称运行，无需关心原文件名
+          ./baidupcs-go login -bduss="${BDUSS}"
+          ./baidupcs-go mkdir -p /github-artifacts/macos-iso
+          ./baidupcs-go upload -r ./* /github-artifacts/macos-iso/
           echo "✅ 文件已成功上传到百度网盘：/github-artifacts/macos-iso/"
