@@ -2,10 +2,9 @@ name: 上传 Artifacts 到百度网盘
 
 on:
   workflow_run:
-    workflows:
-      - "macos-iso-builder"  # 你原来构建的 workflow 名字
+    workflows: ["macos-iso-builder"]
     types: [completed]
-  workflow_dispatch:  # 新增这一行，手动触发开关
+  workflow_dispatch:  # 手动触发开关
 
 jobs:
   upload:
@@ -17,14 +16,14 @@ jobs:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 上传到百度网盘
-        uses: yzx911/baidupan-action@master
+      - name: 上传到百度网盘（替代方案）
+        uses: jadepeng/baidu-netdisk-uploader@main  # 改用这个维护中的 Action
         with:
-          # 百度网盘账号
-          bduss: ${{ secrets.BDUSS }}
-          sToken: ${{ secrets.STOKEN }}
-          # 本地要上传的目录（就是刚才下载的 artifact）
-          localPath: ./
-          # 网盘里的路径
-          remotePath: /github-artifacts/
+          # 百度网盘登录凭证（和之前的密钥名一致，不用重新配）
+          BDUSS: ${{ secrets.BDUSS }}
+          # 要上传的文件/目录（当前目录下的所有 Artifact）
+          source: ./*
+          # 网盘目标路径（会自动创建文件夹）
+          target: /github-artifacts/
+          # 覆盖已存在的文件
           overwrite: true
