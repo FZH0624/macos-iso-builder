@@ -5,6 +5,7 @@ on:
     workflows:
       - "macos-iso-builder"  # 你原来构建的 workflow 名字
     types: [completed]
+  workflow_dispatch:  # 新增这一行，手动触发开关
 
 jobs:
   upload:
