@@ -7,23 +7,37 @@ on:
   workflow_dispatch:  # 手动触发开关
 
 jobs:
-  upload:
+  upload-to-baidu:
     runs-on: ubuntu-latest
     steps:
-      - name: 下载本次构建的 Artifact
+      # 步骤1：下载指定 run 的 Artifacts
+      - name: 下载构建产物
         uses: actions/download-artifact@v4
         with:
           run-id: 22527133827
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 上传到百度网盘（替代方案）
-        uses: jadepeng/baidu-netdisk-uploader@main  # 改用这个维护中的 Action
-        with:
-          # 百度网盘登录凭证（和之前的密钥名一致，不用重新配）
+      # 步骤2：安装百度网盘官方命令行工具（核心，无第三方依赖）
+      - name: 安装 baidupcs-go
+        run: |
+          # 下载官方工具包
+          wget -q https://github.com/felixonmars/baidupcs-go/releases/latest/download/baidupcs-go-linux-amd64.zip -O baidupcs-go.zip
+          # 解压
+          unzip -q baidupcs-go.zip
+          # 赋予执行权限
+          chmod +x baidupcs-go-linux-amd64
+
+      # 步骤3：登录百度网盘并上传文件
+      - name: 上传到百度网盘
+        env:
+          # 从密钥读取 BDUSS
           BDUSS: ${{ secrets.BDUSS }}
-          # 要上传的文件/目录（当前目录下的所有 Artifact）
-          source: ./*
-          # 网盘目标路径（会自动创建文件夹）
-          target: /github-artifacts/
-          # 覆盖已存在的文件
-          overwrite: true
+        run: |
+          # 登录网盘（仅需 BDUSS，无需 STOKEN）
+          ./baidupcs-go-linux-amd64 login -bduss="${BDUSS}"
+          # 创建网盘目录（不存在则自动创建）
+          ./baidupcs-go-linux-amd64 mkdir -p /github-artifacts/macos-iso
+          # 上传所有文件到网盘（递归上传目录）
+          ./baidupcs-go-linux-amd64 upload -r ./* /github-artifacts/macos-iso/
+          # 输出上传成功提示
+          echo "✅ 文件已成功上传到百度网盘：/github-artifacts/macos-iso/"
